@@ -1,0 +1,216 @@
+filename: deepseek11.py
+# ... existing imports ...
+import platform
+import psutil
+
+# ==============
+# CORE SYSTEM
+# ==============
+class NeuroCortex:
+    """Orchestrates specialized models with interactive prompting"""
+    def __init__(self):
+        self.models = {
+            "reasoning": "qwen/qwen3-8b",
+            "instruct": "qwen2.5-14b-instruct-1m",
+            "code_gen": "qwen-coder-deepseek-r1-14b",
+            "embed": "text-embedding-nomic-embed-text-v1.5",
+            "rag": "rag-qwen2.5-7b"
+        }
+        self.memory = VectorMemory()
+        self.toolbox = ToolForge()
+        self.client = openai.OpenAI(base_url="http://localhost:1234/v1", api_key="not-needed")
+        self.iteration_count = 0
+        self.error_history = []
+        self.context_stack = []
+        self.current_project = None
+        self.interaction_history = []
+        
+        # Gather environment information
+        self.environment = self.get_environment_info()
+        
+        self.self_awareness = [
+            "You are an autonomous AI developer",
+            "Assume Python and common dependencies are already installed",
+            "Focus on creating/modifying/assisting with coding tasks",
+            "When debugging, analyze errors systematically",
+            "For task breakdowns, skip environment setup steps",
+            "Generate meaningful tool names based on functionality",
+            "Maintain comprehensive error logs for analysis",
+            # Add environment awareness
+            f"Operating System: {self.environment['os']}",
+            f"Python Version: {self.environment['python_version']}",
+            f"Available RAM: {self.environment['ram_gb']:.1f} GB",
+            "You CANNOT perform destructive operations (delete files, format disks, etc.)",
+            "You MUST validate all code before execution",
+            "When encountering errors, analyze the root cause and try alternative approaches"
+        ]
+
+    def get_environment_info(self) -> dict:
+        """Collect information about the execution environment"""
+        return {
+            "os": platform.system(),
+            "os_version": platform.release(),
+            "python_version": platform.python_version(),
+            "architecture": platform.machine(),
+            "ram_gb": psutil.virtual_memory().total / (1024**3),
+            "cpu_count": psutil.cpu_count(),
+            "current_dir": os.getcwd(),
+            "timestamp": datetime.now().isoformat()
+        }
+
+    # ... existing methods ...
+
+    def run_cycle(self, task: str) -> Tuple[str, bool]:
+        self.iteration_count += 1
+        print(f"\n🌀 CYCLE {self.iteration_count}: {task}")
+        
+        # Add to interaction history
+        self.interaction_history.append({"role": "user", "content": task})
+        
+        # Check if task is a self-improvement directive
+        if task.lower().startswith(("self-improve:", "enhance yourself:")):
+            return self.handle_self_improvement(task)
+            
+        # Check if task is a tool usage directive
+        if task.lower().startswith("use tool:"):
+            tool_name = task.split(":", 1)[1].strip()
+            return self.use_tool(tool_name)
+        
+        # Check if we can use an existing tool
+        tool_result = self.try_use_tool(task)
+        if tool_result is not None:
+            return tool_result
+        
+        # Break down complex tasks
+        if self.is_complex_task(task):
+            return self.handle_complex_task(task)
+        
+        # Retrieve context with environment awareness
+        context = self.retrieve_context(f"{task}\nEnvironment: {self.environment}")
+        
+        # Generate solution using reasoning model
+        reasoning = self.reason(
+            f"Task: {task}\nEnvironment: {json.dumps(self.environment, indent=2)}\n"
+            f"Context: {context}\nApproach:"
+        )
+        
+        # Generate code using instruct model for better instruction following
+        client = self.switch_model("instruct")
+        response = client.chat.completions.create(
+            model=self.models["instruct"],
+            messages=self._build_messages(
+                f"Implement solution for: {task}\n"
+                f"Reasoning: {reasoning}\n"
+                f"Environment constraints:\n{json.dumps(self.environment, indent=2)}"
+            ),
+            temperature=0.3,
+            max_tokens=4000
+        )
+        code = self._extract_code(response.choices[0].message.content)
+        
+        # Execute and debug
+        success, result = self.execute_and_debug(code, task, context)
+        
+        # Update system
+        self.update_system_state(task, code, success, result)
+        
+        return result, success
+
+    def execute_and_debug(self, code: str, task: str, context: str) -> Tuple[bool, str]:
+        max_attempts = 5
+        current_code = code
+        last_error = ""
+        
+        for attempt in range(max_attempts):
+            # Validate syntax
+            if not self.validate_syntax(current_code):
+                error = "Syntax error detected"
+                print(f"🛠️ Attempt {attempt+1}/{max_attempts}: Fixing syntax")
+                current_code = self.debug_code(current_code, error, context, attempt)
+                continue
+                
+            # Execute
+            stdout, stderr, timeout = self.execute_safely(current_code)
+            
+            if not stderr and not timeout:
+                return True, stdout
+                
+            error = stderr or timeout
+            self.log_error(task, current_code, error)
+            
+            # Analyze error pattern
+            if error == last_error:
+                print("🔄 Same error repeated - trying alternative approach")
+                current_code = self.generate_alternative_solution(task, context, error, attempt)
+            else:
+                print(f"🔧 Attempt {attempt+1}/{max_attempts}: Debugging error: {error}")
+                current_code = self.debug_code(current_code, error, context, attempt)
+            
+            last_error = error
+        
+        return False, "🚨 Maximum debugging attempts exceeded"
+
+    def generate_alternative_solution(self, task: str, context: str, error: str, attempt: int) -> str:
+        """Generate a completely different approach when debugging fails"""
+        print("💡 Developing alternative solution approach...")
+        analysis = self.reason(
+            f"Original task: {task}\n"
+            f"Error: {error}\n"
+            f"Environment: {json.dumps(self.environment, indent=2)}\n"
+            "Previous attempts failed. Suggest a completely different approach to solve the task."
+        )
+        
+        return self.generate_code(
+            f"Implement alternative solution for: {task}\n"
+            f"Reasoning: {analysis}\n"
+            f"Environment constraints:\n{json.dumps(self.environment, indent=2)}"
+        )
+
+    def debug_code(self, code: str, error: str, context: str, attempt: int) -> str:
+        # ... existing debug logic ...
+
+        # Enhanced debugging with environment awareness
+        client = self.switch_model("reasoning")
+        prompt = (
+            f"Debug this error:\nCode:\n{code}\nError: {error}\n\n"
+            f"Environment: {json.dumps(self.environment, indent=2)}\n"
+            f"Original task context: {context}\n\n"
+            "Analyze the error considering the environment and provide fixed code:"
+        )
+        
+        # ... rest of debug_code ...
+
+    def update_system_state(self, task: str, code: str, success: bool, result: str) -> None:
+        # ... existing code ...
+        
+        # Add environment to memory
+        memory_entry["environment"] = self.environment
+        
+        # ... rest of method ...
+
+# ... rest of the code remains the same with minor improvements ...
+
+class ToolForge:
+    """Tool management system with enhanced safety checks"""
+    def __init__(self, tools_dir="tools"):
+        # ... existing code ...
+        
+        # Add OS-specific dangerous patterns
+        if platform.system() == "Windows":
+            self.dangerous_patterns.extend([
+                r'os\.system\(.*format',
+                r'subprocess\.run\(.*["\']rmdir /s',
+                r'del [a-z]:\\',
+                r'Remove-Item .* -Recurse -Force'
+            ])
+        else:  # Unix-like systems
+            self.dangerous_patterns.extend([
+                r'os\.system\(.*rm -rf',
+                r'subprocess\.run\(.*["\']rm -rf',
+                r'\brm -rf\b',
+                r'dd if=/dev/zero'
+            ])
+
+    # ... existing methods ...
+
+# ... InteractiveOrchestrator remains mostly the same ...
